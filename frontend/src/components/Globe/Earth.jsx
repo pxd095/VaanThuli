@@ -1,12 +1,12 @@
-import { Suspense, useRef } from 'react';
+import { Suspense, useRef, Component } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { useTexture } from '@react-three/drei';
 import * as THREE from 'three';
 
-// NASA Blue Marble textures via three-globe unpkg CDN
-const EARTH_DAY_URL    = 'https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg';
-const EARTH_NIGHT_URL  = 'https://unpkg.com/three-globe/example/img/earth-night.jpg';
-const EARTH_CLOUDS_URL = 'https://unpkg.com/three-globe/example/img/earth-clouds.png';
+// Local textures served from /public/textures/ — no CDN dependency
+const EARTH_DAY_URL    = '/textures/earth-day.jpg';
+const EARTH_NIGHT_URL  = '/textures/earth-night.jpg';
+const EARTH_CLOUDS_URL = '/textures/earth-clouds.png';
 
 /**
  * EarthSphere — the textured Earth mesh with slow cloud rotation.
@@ -57,19 +57,44 @@ function EarthSphere() {
   );
 }
 
+/** Solid blue-navy fallback sphere shown while textures stream in */
+function EarthFallback() {
+  return (
+    <mesh>
+      <sphereGeometry args={[1, 32, 32]} />
+      <meshPhongMaterial color="#0a2a5a" emissive="#001020" shininess={5} />
+    </mesh>
+  );
+}
+
 /**
- * Earth — exported component with Suspense fallback.
- * Shows a solid sphere while textures load.
+ * Error boundary — if textures fail to load, render the fallback sphere
+ * so the rest of the 3D scene is not destroyed.
+ */
+class EarthErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  render() {
+    if (this.state.hasError) return <EarthFallback />;
+    return this.props.children;
+  }
+}
+
+/**
+ * Earth — exported component with Suspense + error boundary.
+ * Shows a solid sphere while textures load, and if they fail.
  */
 export function Earth() {
   return (
-    <Suspense fallback={
-      <mesh>
-        <sphereGeometry args={[1, 32, 32]} />
-        <meshBasicMaterial color="#0a1a3a" />
-      </mesh>
-    }>
-      <EarthSphere />
-    </Suspense>
+    <EarthErrorBoundary>
+      <Suspense fallback={<EarthFallback />}>
+        <EarthSphere />
+      </Suspense>
+    </EarthErrorBoundary>
   );
 }

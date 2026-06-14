@@ -12,10 +12,12 @@ const MESSAGES = [
 ];
 
 export function LoadingScreen({ done }) {
-  const [progress, setProgress] = useState(0);
-  const [msgIndex, setMsgIndex] = useState(0);
-  const [fading,   setFading]   = useState(false);
+  const [progress,  setProgress]  = useState(0);
+  const [msgIndex,  setMsgIndex]  = useState(0);
+  const [fading,    setFading]    = useState(false);
+  const [unmounted, setUnmounted] = useState(false);
 
+  // Advance progress bar while loading
   useEffect(() => {
     const tick = setInterval(() => {
       setProgress(p => {
@@ -27,18 +29,25 @@ export function LoadingScreen({ done }) {
     return () => clearInterval(tick);
   }, []);
 
+  // When done, jump to 100% and start fade-out animation
   useEffect(() => {
     if (done) {
       setProgress(100);
-      setTimeout(() => setFading(true), 400);
+      // Small delay so the bar visually fills to 100% before fade
+      setTimeout(() => setFading(true), 300);
     }
   }, [done]);
 
-  if (fading && done) return null;
+  // Removed from DOM after CSS animation ends — prevents invisible overlay blocking the globe
+  if (unmounted) return null;
 
   return (
-    <div className={`loading-screen${fading ? ' fade-out' : ''}`}
-         style={{ pointerEvents: done ? 'none' : 'all' }}>
+    <div
+      className={`loading-screen${fading ? ' fade-out' : ''}`}
+      onAnimationEnd={() => {
+        if (fading) setUnmounted(true);
+      }}
+    >
       <div className="loading-content">
         <div className="loading-earth">🌍</div>
 

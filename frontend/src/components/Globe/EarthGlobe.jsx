@@ -34,7 +34,7 @@ export function EarthGlobe({
   return (
     <div className="globe-canvas">
       <Canvas
-        camera={{ position: [0, 0, 2.6], fov: 42, near: 0.1, far: 1000 }}
+        camera={{ position: [0, 0, 3.8], fov: 45, near: 0.1, far: 1000 }}
         gl={{
           antialias:    true,
           toneMapping:  THREE.ACESFilmicToneMapping,
@@ -94,7 +94,7 @@ export function EarthGlobe({
         <OrbitControls
           enablePan={false}
           minDistance={1.3}
-          maxDistance={6}
+          maxDistance={12}
           autoRotate
           autoRotateSpeed={0.25}
           enableDamping

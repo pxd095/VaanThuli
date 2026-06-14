@@ -5,7 +5,7 @@ import { ObjectCard }    from './ObjectCard';
 
 export function HUD({
   filter, setFilter,
-  satCount, asteroidCount,
+  satCount, asteroidCount, tleSource,
   userLocation, onRequestLocation, locationLoading, onClearLocation,
   bubbleRadius, setBubbleRadius,
   selectedObject, onCloseCard,
@@ -23,6 +23,7 @@ export function HUD({
         satCount={satCount}
         asteroidCount={asteroidCount}
         filter={filter}
+        tleSource={tleSource}
       />
 
       {/* Bottom-left: Toggle */}

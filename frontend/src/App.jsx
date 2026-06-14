@@ -13,16 +13,25 @@ export default function App() {
   const [appReady,       setAppReady]       = useState(false);
 
   // Data hooks
-  const { tleData, count: satCount, loading: tleLoading } = useTLEData();
+  const { tleData, count: satCount, loading: tleLoading, source: tleSource } = useTLEData();
   const { location, loading: locLoading, request: requestLocation, clear: clearLocation } = useUserLocation();
   const { asteroids, loading: astLoading } = useAsteroidData(location, bubbleRadius);
 
-  // Mark app ready when TLE data arrives (asteroids + textures can load after)
+  // Mark app ready once the initial loading phase completes.
+  // We don't require tleData to be non-null — the TLE layer can populate
+  // later if CelesTrak is rate-limiting (503). A 3-second max-wait covers
+  // any edge case where tleLoading gets stuck.
   useEffect(() => {
-    if (!tleLoading && tleData) {
+    if (!tleLoading) {
       setTimeout(() => setAppReady(true), 800);
     }
-  }, [tleLoading, tleData]);
+  }, [tleLoading]);
+
+  // Hard fallback: show the app after 3s no matter what
+  useEffect(() => {
+    const t = setTimeout(() => setAppReady(true), 3000);
+    return () => clearTimeout(t);
+  }, []);
 
   return (
     <div className="app">
@@ -45,6 +54,7 @@ export default function App() {
         setFilter={setFilter}
         satCount={satCount}
         asteroidCount={asteroids.length}
+        tleSource={tleSource}
         userLocation={location}
         onRequestLocation={requestLocation}
         locationLoading={locLoading}
