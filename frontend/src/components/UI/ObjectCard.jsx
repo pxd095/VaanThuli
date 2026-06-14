@@ -43,10 +43,21 @@ export function ObjectCard({ object, insight, insightLoading, onClose }) {
                 ? `~${object.diameter_m?.toFixed(0)} m`
                 : `${(object.estimatedDiameterKm?.min * 1000)?.toFixed(0)}–${(object.estimatedDiameterKm?.max * 1000)?.toFixed(0)} m`}
             />
+            {/* HACKATHON FEATURE: HUMAN SCALE */}
+            {object.humanScale && (
+              <StatRow label="Scale" value={`≈ ${object.humanScale}`} />
+            )}
             <StatRow
               label="Approach"
               value={object.closeApproachFull ?? object.closeApproachDate ?? '—'}
             />
+            {/* HACKATHON FEATURE: DOOM SCORE */}
+            {object.doomScore ? (
+              <div className="card-stat" style={{ color: '#ff2244', fontWeight: 'bold', marginTop: '8px', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '8px' }}>
+                <span className="card-stat-label" style={{ color: '#ff2244' }}>Kinetic Threat Score</span>
+                <span className="card-stat-value">🔥 {object.doomScore}</span>
+              </div>
+            ) : null}
           </>
         )}
       </div>
