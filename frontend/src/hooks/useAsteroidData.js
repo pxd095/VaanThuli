@@ -3,7 +3,6 @@ import { useState, useEffect, useRef } from 'react';
 /**
  * Fetches asteroid data from the sky-bubble endpoint.
  * Re-fetches when user location or radius changes.
- * Asteroids are refreshed every 6 hours (their update frequency).
  */
 export function useAsteroidData(userLocation, radius = 500) {
   const [asteroids, setAsteroids] = useState([]);
@@ -22,6 +21,13 @@ export function useAsteroidData(userLocation, radius = 500) {
 
       const data  = await res.json();
       const neos  = (data.objects ?? []).filter(o => o.type === 'asteroid');
+      
+      // --- HACKATHON FEATURE: THE DOOM SCORE ALGORITHM ---
+      // This automatically sorts the array so the most dangerous rocks 
+      // render first in the system and take priority.
+      neos.sort((a, b) => (b.doomScore || 0) - (a.doomScore || 0));
+      // ---------------------------------------------------
+
       setAsteroids(neos);
     } catch (err) {
       console.error('[useAsteroidData] Fetch error:', err.message);
