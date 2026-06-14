@@ -1,111 +1,84 @@
 import { useRef, useEffect, useMemo, useCallback } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import * as satellite from 'satellite.js';
 import { latLngToVector3, altToRadius, getOrbitColor } from '../../utils/propagator';
-import { MAX_DISPLAY_SATELLITES, PROPAGATION_INTERVAL_MS } from '../../utils/constants';
+import { MAX_DISPLAY_SATELLITES } from '../../utils/constants';
 
 /**
  * SatelliteLayer
  * ──────────────
- * Renders up to MAX_DISPLAY_SATELLITES satellites using THREE.InstancedMesh —
- * a single draw call for all instances, regardless of count.
+ * Renders satellites using THREE.InstancedMesh (1 draw call for all dots).
  *
- * Performance strategy:
- *  1. Parse all TLE strings into satrec objects ONCE when tleData changes
- *  2. Propagate all positions every PROPAGATION_INTERVAL_MS
- *  3. In useFrame: update InstancedMesh matrices every frame (fast — just reads ref)
- *  4. Colors set at propagation time (not every frame)
+ * SIMPLIFIED APPROACH: Uses server-pre-propagated lat/lng/alt_km directly.
+ * No client-side satellite.js re-propagation — just convert lat/lng → 3D vector.
+ * Positions update every 30s by asking the parent for fresh data (via re-fetch).
  *
- * Fix: propagate is defined with useCallback BEFORE useEffect, ensuring it is
- * available in the closure when the effect runs.
+ * This avoids all TLE-parsing failures that were causing 0 visible satellites.
  */
 export function SatelliteLayer({ tleData, visible, onSelect }) {
   const meshRef      = useRef();
-  const satrecsRef   = useRef([]);  // { satrec, name, norad_id }[]
   const positionsRef = useRef([]);  // { pos, name, norad_id, lat, lng, altKm }[]
+  const colorsBaked  = useRef(false);
 
   const dummy = useMemo(() => new THREE.Object3D(), []);
 
-  // ── Step 2: Propagate positions ──────────────────────────────
-  // Defined FIRST (as useCallback) so the useEffect below can safely close over it.
-  const propagate = useCallback(() => {
-    const now  = new Date();
-    const gmst = satellite.gstime(now);
-    const results = [];
-
-    for (const { satrec, name, norad_id } of satrecsRef.current) {
-      try {
-        const posVel = satellite.propagate(satrec, now);
-        if (!posVel?.position || typeof posVel.position === 'boolean') continue;
-
-        const geo  = satellite.eciToGeodetic(posVel.position, gmst);
-        const lat  = satellite.radiansToDegrees(geo.latitude);
-        const lng  = satellite.radiansToDegrees(geo.longitude);
-        const altKm = geo.height;
-
-        if (!isFinite(lat) || !isFinite(lng) || !isFinite(altKm) || altKm < 0) continue;
-
-        const pos = latLngToVector3(lat, lng, altToRadius(altKm));
-        results.push({ pos, name, norad_id, lat, lng, altKm });
-      } catch { /* skip bad propagations */ }
+  // ── Build positions from server lat/lng/alt_km ───────────────
+  const buildPositions = useCallback(() => {
+    if (!tleData?.length) {
+      positionsRef.current = [];
+      return;
     }
 
-    positionsRef.current = results;
-
-    // Update colors on InstancedMesh at propagation time (not every frame)
-    if (meshRef.current && results.length > 0) {
-      const colorAttr = new THREE.Color();
-      for (let i = 0; i < results.length; i++) {
-        colorAttr.set(getOrbitColor(results[i].altKm));
-        meshRef.current.setColorAt(i, colorAttr);
-      }
-      if (meshRef.current.instanceColor) {
-        meshRef.current.instanceColor.needsUpdate = true;
-      }
-    }
-  }, []); // stable ref — reads satrecsRef which is always current
-
-  // ── Step 1: Parse TLEs into satrecs (once per data change) ──
-  useEffect(() => {
-    if (!tleData?.length) return;
-
-    console.log(`[SatelliteLayer] Parsing ${tleData.length} TLEs…`);
     const limited = tleData.slice(0, MAX_DISPLAY_SATELLITES);
-    const satrecs = [];
+    const results = [];
 
     for (const sat of limited) {
       try {
-        const satrec = satellite.twoline2satrec(
-          sat.tle_line1.trim(),
-          sat.tle_line2.trim()
-        );
-        // satellite.js sets error code when TLE is invalid
-        if (satrec.error !== 0) continue;
-        satrecs.push({ satrec, name: sat.name, norad_id: sat.norad_id });
-      } catch { /* skip malformed TLEs */ }
+        const lat   = sat.lat;
+        const lng   = sat.lng;
+        const altKm = sat.alt_km;  // server field name is alt_km
+
+        if (!isFinite(lat) || !isFinite(lng) || !isFinite(altKm) || altKm < 0) continue;
+
+        const r   = altToRadius(altKm);
+        const pos = latLngToVector3(lat, lng, r);
+        results.push({ pos, name: sat.name, norad_id: sat.norad_id, lat, lng, altKm });
+      } catch { /* skip */ }
     }
 
-    console.log(`[SatelliteLayer] ${satrecs.length} valid satrecs parsed`);
-    satrecsRef.current = satrecs;
+    console.log(`[SatelliteLayer] Built ${results.length} positions from ${limited.length} TLEs`);
+    positionsRef.current = results;
+    colorsBaked.current  = false; // signal useFrame to rebake colors
+  }, [tleData]);
 
-    // Run first propagation immediately
-    propagate();
+  // Rebuild positions whenever tleData changes
+  useEffect(() => {
+    buildPositions();
+  }, [buildPositions]);
 
-    // Refresh positions every PROPAGATION_INTERVAL_MS
-    const timer = setInterval(propagate, PROPAGATION_INTERVAL_MS);
-    return () => clearInterval(timer);
-  }, [tleData, propagate]);
-
-  // ── Step 3: Push positions into GPU every frame ──────────────
+  // ── Bake colors + push matrices every frame ──────────────────
   useFrame(() => {
     if (!meshRef.current) return;
     const positions = positionsRef.current;
     if (!positions.length) return;
 
+    // Set colors once per data change
+    if (!colorsBaked.current) {
+      const col = new THREE.Color();
+      for (let i = 0; i < positions.length; i++) {
+        col.set(getOrbitColor(positions[i].altKm));
+        meshRef.current.setColorAt(i, col);
+      }
+      if (meshRef.current.instanceColor) {
+        meshRef.current.instanceColor.needsUpdate = true;
+      }
+      colorsBaked.current = true;
+    }
+
+    // Update matrix for every satellite every frame
     for (let i = 0; i < positions.length; i++) {
       dummy.position.copy(positions[i].pos);
-      dummy.scale.setScalar(0.004);
+      dummy.scale.setScalar(0.005);
       dummy.updateMatrix();
       meshRef.current.setMatrixAt(i, dummy.matrix);
     }
@@ -136,7 +109,7 @@ export function SatelliteLayer({ tleData, visible, onSelect }) {
         }
       }}
     >
-      <sphereGeometry args={[0.003, 4, 4]} />
+      <sphereGeometry args={[0.003, 6, 6]} />
       <meshBasicMaterial vertexColors />
     </instancedMesh>
   );

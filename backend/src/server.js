@@ -24,7 +24,8 @@ import skyBubbleRoute              from './routes/skyBubble.js';
 import tleDataRoute                from './routes/tleData.js';
 import { runTLEFetch,  registerTLEScheduler } from './schedulers/tleFetcher.js';
 import { runNEOFetch,  registerNEOScheduler } from './schedulers/neoFetcher.js';
-import { getCacheStats }                       from './services/cacheService.js';
+import { getCacheStats, setSatelliteCache }   from './services/cacheService.js';
+import { supabase }                           from './db/supabaseClient.js';
 
 // ── Server Init ────────────────────────────────────────────────
 const app = Fastify({
@@ -107,8 +108,45 @@ try {
   // ── Cold-start warm-up: fetch data immediately ───────────────
   // Run both fetchers in parallel — don't await so server responds immediately
   console.log('[Boot] 🔥 Warming up data caches (this takes ~10-15s)...');
+
+  // Try CelesTrak first, then fall back to Supabase if rate-limited
+  const warmSatellites = async () => {
+    await runTLEFetch();
+    // Check if cache got populated (CelesTrak may have been rate-limited)
+    const stats = getCacheStats();
+    if (!stats.satellites || stats.satellites === 0) {
+      console.log('[Boot] 📡 CelesTrak rate-limited — loading satellites from Supabase...');
+      try {
+        const { data, error } = await supabase
+          .from('satellites')
+          .select('norad_id, name, tle_line1, tle_line2, alt_km, lat, lng, velocity_kms, propagated_at')
+          .order('propagated_at', { ascending: false })
+          .limit(20000);
+        if (!error && data?.length > 0) {
+          // Normalize field names to match cache schema
+          const normalized = data.map(s => ({
+            norad_id:     s.norad_id,
+            name:         s.name,
+            tle_line1:    s.tle_line1,
+            tle_line2:    s.tle_line2,
+            alt_km:       s.alt_km,
+            lat:          s.lat,
+            lng:          s.lng,
+            velocity_kms: s.velocity_kms,
+          }));
+          setSatelliteCache(normalized);
+          console.log(`[Boot] ✅ Loaded ${normalized.length} satellites from Supabase cache`);
+        } else {
+          console.log('[Boot] ⚠️  Supabase satellites table is also empty — will retry on next cron tick');
+        }
+      } catch (dbErr) {
+        console.error('[Boot] ❌ Supabase fallback failed:', dbErr.message);
+      }
+    }
+  };
+
   Promise.all([
-    runTLEFetch(),
+    warmSatellites(),
     runNEOFetch(),
   ]).then(() => {
     console.log('[Boot] ✅ Cache warm-up complete — API is fully ready');

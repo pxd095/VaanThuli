@@ -27,7 +27,9 @@ export default async function tleDataRoute(fastify) {
       name:      sat.name,
       tle_line1: sat.tle_line1,
       tle_line2: sat.tle_line2,
-      alt_km:    sat.alt_km,        // Last known altitude (for initial color)
+      lat:       sat.lat,          // Server-propagated latitude
+      lng:       sat.lng,          // Server-propagated longitude
+      alt_km:    sat.alt_km,       // Last known altitude (for orbit color)
     }));
 
     reply.header('Cache-Control', 'public, max-age=300'); // 5-min browser cache
