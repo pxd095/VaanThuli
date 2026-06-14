@@ -98,26 +98,45 @@ export function filterAsteroidsForBubble(asteroids, daysOut = 7) {
 
   return asteroids
     .filter(neo => {
-      if (!neo.epoch_close_approach_ms) return true; // Include if no date
+      if (!neo.epoch_close_approach_ms) return true; 
       return neo.epoch_close_approach_ms <= maxTime;
     })
-    .map(neo => ({
-      id:                  neo.neo_id,
-      name:                neo.name,
-      type:                'asteroid',
-      estimatedDiameterKm: {
-        min: neo.est_diameter_km_min,
-        max: neo.est_diameter_km_max,
-      },
-      velocityKms:         neo.velocity_kms,
-      missDistanceKm:      neo.miss_distance_km,
-      missDistanceLunar:   neo.miss_distance_lunar,
-      hazardous:           neo.is_hazardous,
-      closeApproachDate:   neo.close_approach_date,
-      closeApproachFull:   neo.close_approach_full,
-    }))
+    .map(neo => {
+      // --- HACKATHON FEATURES: DOOM SCORE & HUMAN SCALE ---
+      const avgDiameterKm = (neo.est_diameter_km_min + neo.est_diameter_km_max) / 2;
+      const meters = avgDiameterKm * 1000;
+      
+      let scaleString = "Unknown size";
+      if (meters < 80) scaleString = `${Math.round(meters / 4.5)} Cars`;
+      else if (meters < 300) scaleString = `${Math.round(meters / 105)} Football Fields`;
+      else scaleString = `${(meters / 330).toFixed(1)} Eiffel Towers`;
+
+      // Doom Score = (Velocity * Diameter) / Distance
+      const dScore = (neo.velocity_kms && neo.miss_distance_lunar && neo.miss_distance_lunar > 0)
+        ? parseFloat(((neo.velocity_kms * avgDiameterKm) / neo.miss_distance_lunar).toFixed(4))
+        : 0;
+      // ----------------------------------------------------
+
+      return {
+        id:                  neo.neo_id,
+        name:                neo.name,
+        type:                'asteroid',
+        estimatedDiameterKm: {
+          min: neo.est_diameter_km_min,
+          max: neo.est_diameter_km_max,
+        },
+        velocityKms:         neo.velocity_kms,
+        missDistanceKm:      neo.miss_distance_km,
+        missDistanceLunar:   neo.miss_distance_lunar,
+        hazardous:           neo.is_hazardous,
+        closeApproachDate:   neo.close_approach_date,
+        closeApproachFull:   neo.close_approach_full,
+        // Send the new features to the frontend!
+        humanScale:          scaleString,
+        doomScore:           dScore
+      };
+    })
     .sort((a, b) => {
-      // Sort: hazardous first, then by miss distance
       if (a.hazardous !== b.hazardous) return a.hazardous ? -1 : 1;
       return a.missDistanceKm - b.missDistanceKm;
     });
